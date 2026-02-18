@@ -8,7 +8,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Usage guide &mdash; nvidia-resiliency-ext 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
 
   
@@ -68,6 +68,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../checkpointing/async/index.html">Async Checkpointing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../checkpointing/local/index.html">Local Checkpointing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../straggler_det/index.html">Straggler Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../shared_utils/index.html">Shared Utilities</a></li>
 </ul>
 
         </div>
@@ -146,6 +147,13 @@
 and supports most <code class="docutils literal notranslate"><span class="pre">torchrun</span></code> command-line parameters. FT configuration can be specified either
 via a YAML file using <code class="docutils literal notranslate"><span class="pre">--ft-cfg-path</span></code> or through command-line parameters
 using <code class="docutils literal notranslate"><span class="pre">--ft-&lt;parameter-name&gt;</span></code>.</p>
+<p>Details:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-node-health-check-endpoint</span></code> (alias: <code class="docutils literal notranslate"><span class="pre">--ft-node_health_check_endpoint</span></code>) sets the node health check service endpoint used by InJob.
+Accepts Unix domain socket (UDS): <code class="docutils literal notranslate"><span class="pre">/var/run/nodehealth.sock</span></code> or <code class="docutils literal notranslate"><span class="pre">unix:///var/run/nodehealth.sock</span></code>.</p></li>
+<li><p>The rendezvous implementations call <code class="docutils literal notranslate"><span class="pre">NodeHealthCheck</span></code> which will connect to the provided endpoint.</p></li>
+<li><p>Connectivity errors are treated as non-fatal (health passes); explicit RPC failures reported by the service mark the node unhealthy.</p></li>
+</ul>
 <p>If <code class="docutils literal notranslate"><span class="pre">--max-restarts</span></code> is specified, the launcher restarts failed workers.
 The restart behavior depends on the <code class="docutils literal notranslate"><span class="pre">--ft-restart-policy</span></code> parameter, which supports two modes:</p>
 <ul class="simple">
@@ -157,6 +165,198 @@ falls below the minimum specified in <code class="docutils literal notranslate">
 without restarting remaining workers, e.g., with the <a class="reference internal" href="../inprocess/index.html"><span class="doc">Inprocess Restart</span></a>.
 For details on how <code class="docutils literal notranslate"><span class="pre">min-healthy</span></code> policy interacts with <a class="reference internal" href="../inprocess/index.html"><span class="doc">Inprocess Restart</span></a> see <a class="reference internal" href="integration/inprocess.html"><span class="doc">FT Launcher &amp; Inprocess integration</span></a>.</p></li>
 </ul>
+<section id="node-health-check-service">
+<h4>Node health check service<a class="headerlink" href="#node-health-check-service" title="Link to this heading"></a></h4>
+<p>The launcher accepts an optional argument to point to the node health check service endpoint.
+When provided, the launcher exports the socket path to child processes and
+the rendezvous handlers will use it in their node health checks.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-node-health-check-endpoint</span></code> (alias: <code class="docutils literal notranslate"><span class="pre">--ft-node_health_check_endpoint</span></code>) sets the node health check service endpoint (UDS).</p></li>
+<li><p>The rendezvous implementations call <code class="docutils literal notranslate"><span class="pre">NodeHealthCheck</span></code> which will connect to this UDS endpoint.</p></li>
+<li><p>Connectivity errors are treated as non-fatal (health passes); explicit RPC failures reported by the service mark the node unhealthy.</p></li>
+</ul>
+</section>
+<section id="distributed-storage-health-check-lustre-nfs">
+<h4>Distributed storage health check (Lustre + NFS)<a class="headerlink" href="#distributed-storage-health-check-lustre-nfs" title="Link to this heading"></a></h4>
+<p>The launcher can perform a distributed storage health check before rendezvous.
+By default it is disabled. When enabled (via CLI or YAML), it:</p>
+<ul>
+<li><p>Verifies Lustre health via <code class="docutils literal notranslate"><span class="pre">/sys/fs/lustre/health_check</span></code> (fails if not healthy).</p></li>
+<li><p>Discovers distributed mount targets and checks that each mount is reachable.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-enable-dist-storage-healthcheck</span></code> (alias: <code class="docutils literal notranslate"><span class="pre">--ft_enable_dist_storage_healthcheck</span></code>)
+- Accepts a boolean-like value only to enable the mount checks</p>
+<blockquote>
+<div><p>(e.g., <code class="docutils literal notranslate"><span class="pre">--ft-enable-dist-storage-healthcheck</span> <span class="pre">true</span></code>).</p>
+</div></blockquote>
+</li>
+</ul>
+</section>
+<section id="storage-path-health-check">
+<h4>Storage path health check<a class="headerlink" href="#storage-path-health-check" title="Link to this heading"></a></h4>
+<p>Validate specific absolute paths for existence and basic readability before rendezvous.</p>
+<ul class="simple">
+<li><p>CLI: <code class="docutils literal notranslate"><span class="pre">--ft-storage-health-check-path</span></code> (alias: <code class="docutils literal notranslate"><span class="pre">--ft_storage_health_check_path</span></code>)
+- Accepts a comma-separated list of absolute paths (each starting with <code class="docutils literal notranslate"><span class="pre">/</span></code>).
+- Example: <code class="docutils literal notranslate"><span class="pre">--ft-storage-health-check-path</span> <span class="pre">'/data/checkpoints,/mnt/dataset'</span></code></p></li>
+<li><p>YAML: <code class="docutils literal notranslate"><span class="pre">storage_healthcheck_path</span></code> under the <code class="docutils literal notranslate"><span class="pre">fault_tolerance</span></code> section</p></li>
+</ul>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">fault_tolerance</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># Comma-separated absolute paths</span>
+<span class="w">  </span><span class="nt">storage_healthcheck_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/data/checkpoints,/mnt/dataset&quot;</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Validation behavior:</dt><dd><ul class="simple">
+<li><p>Files: attempts to read a small block (up to 4KB)</p></li>
+<li><p>Directories: lists directory contents</p></li>
+<li><p>Other existing types (e.g., devices/symlinks): performs <code class="docutils literal notranslate"><span class="pre">stat</span></code> access</p></li>
+</ul>
+</dd>
+</dl>
+</section>
+<section id="attribution-service-integration">
+<h4>Attribution service integration<a class="headerlink" href="#attribution-service-integration" title="Link to this heading"></a></h4>
+<p>Enable artifact analysis (e.g., logs) during rendezvous health checks by pointing to a running attribution service.
+The feature is enabled by specifying both host and port.</p>
+<ul>
+<li><p>CLI:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-attrsvc-host</span> <span class="pre">&lt;HOST&gt;</span></code> (alias: <code class="docutils literal notranslate"><span class="pre">--ft_attrsvc_host</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-attrsvc-port</span> <span class="pre">&lt;PORT&gt;</span></code> (alias: <code class="docutils literal notranslate"><span class="pre">--ft_attrsvc_port</span></code>)</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ft_launcher<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--ft-attrsvc-host<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--ft-attrsvc-port<span class="w"> </span><span class="m">8000</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>train.py
+</pre></div>
+</div>
+</li>
+<li><p>YAML: under the <code class="docutils literal notranslate"><span class="pre">fault_tolerance</span></code> section</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">fault_tolerance</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">attrsvc_host</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;127.0.0.1&quot;</span>
+<span class="w">  </span><span class="nt">attrsvc_port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8000</span>
+</pre></div>
+</div>
+</li>
+</ul>
+</section>
+<section id="gpu-memory-reclaim">
+<h4>GPU Memory Reclaim<a class="headerlink" href="#gpu-memory-reclaim" title="Link to this heading"></a></h4>
+<p>When <code class="docutils literal notranslate"><span class="pre">--max-restarts</span></code> is specified, <code class="docutils literal notranslate"><span class="pre">ft_launcher</span></code> can optionally wait for GPU memory to be
+released before starting new workers after a restart. This helps ensure that GPU memory from
+terminated workers has been fully reclaimed before starting new processes.</p>
+<p>This feature is controlled by three parameters:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-gpu-memory-reclaim-timeout</span></code> (default: 50.0 seconds)
+Timeout for waiting for GPU memory to drop below the tolerance threshold. Set to 0 to disable the feature.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-gpu-memory-tolerance-mb</span></code> (default: 512.0 MB)
+Maximum allowed GPU memory usage. The launcher waits until GPU memory drops below this threshold.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-gpu-memory-poll-interval</span></code> (default: 2.0 seconds)
+Poll interval for checking GPU memory usage during the reclaim process.</p></li>
+</ul>
+<p>On restarts, the launcher periodically checks GPU memory usage and waits until it drops below
+the tolerance threshold or the timeout is reached. Memory statistics for each GPU are collected
+and logged after the reclaim process completes. If the timeout is reached, an error is logged but the
+restart proceeds as a best effort.</p>
+</section>
+<section id="rank-assignment">
+<h4>Rank assignment<a class="headerlink" href="#rank-assignment" title="Link to this heading"></a></h4>
+<p>The <code class="docutils literal notranslate"><span class="pre">ft_launcher</span></code> assigns ranks to workers during the rendezvous process.</p>
+<p>Rank assignments always use infrastructure-based ordering when available:</p>
+<ul class="simple">
+<li><p>The launcher first checks <code class="docutils literal notranslate"><span class="pre">SLURM_PROCID</span></code> (automatically set in SLURM environments)</p></li>
+<li><p>If not available, it falls back to <code class="docutils literal notranslate"><span class="pre">GROUP_RANK</span></code> (set by <code class="docutils literal notranslate"><span class="pre">ft_launcher</span></code> itself)</p></li>
+<li><p>If neither environment variable is set, ranks are assigned deterministically based on sorted node descriptors</p></li>
+</ul>
+<p>This ensures consistency with the infrastructure’s rank assignment, which is important
+for static deployments and proper resource allocation.</p>
+</section>
+<section id="hot-spare-nodes-and-segment-aware-rank-assignment">
+<h4>Hot Spare Nodes and Segment-Aware Rank Assignment<a class="headerlink" href="#hot-spare-nodes-and-segment-aware-rank-assignment" title="Link to this heading"></a></h4>
+<p>The <code class="docutils literal notranslate"><span class="pre">ft_launcher</span></code> supports hot spare nodes, which are standby nodes that can replace failed nodes
+during restart. Hot spare functionality is always enabled and works with <code class="docutils literal notranslate"><span class="pre">--max-restarts</span></code>.</p>
+<p>By default (<code class="docutils literal notranslate"><span class="pre">--ft-segment=None</span></code>), the launcher uses <strong>simple hot spare mode</strong>, which is suitable
+for most deployments including H100-based systems where NVLink domain segmentation is not required:</p>
+<ul class="simple">
+<li><p>The first <code class="docutils literal notranslate"><span class="pre">min_nodes</span></code> (from <code class="docutils literal notranslate"><span class="pre">--nnodes</span></code>) are assigned as active workers</p></li>
+<li><p>Any additional nodes beyond <code class="docutils literal notranslate"><span class="pre">min_nodes</span></code> become hot spares with standby ranks</p></li>
+<li><p>Hot spares do not require GPU ClusterUUID or NVLink domain awareness</p></li>
+<li><p>This mode effectively treats each node independently for rank assignment</p></li>
+</ul>
+<p>For large-scale NVSwitch-based systems (e.g., DGX H200, HGX B200), you can enable
+<strong>segment-aware hot spare mode</strong> using <code class="docutils literal notranslate"><span class="pre">--ft-segment=N</span></code>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">N</span></code> specifies the minimum number of nodes required per NVLink domain (identified by GPU ClusterUUID)</p></li>
+<li><p>Only domains with at least <code class="docutils literal notranslate"><span class="pre">N</span></code> nodes participate in training</p></li>
+<li><p>From each valid domain, as many complete segments as possible are selected</p></li>
+<li><p>Nodes in the same segment receive contiguous group ranks for optimal performance</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">min_nodes</span></code> parameter (from <code class="docutils literal notranslate"><span class="pre">--nnodes</span></code>) must be divisible by <code class="docutils literal notranslate"><span class="pre">segment</span></code></p></li>
+<li><p>GPU ClusterUUID is automatically queried via nvidia-smi to identify NVLink domains</p></li>
+</ul>
+<p><strong>Key Differences:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-segment=None</span></code> (default): Simple mode without domain awareness, suitable for H100 systems</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-segment=1</span></code>: Each node is a segment, similar to simple mode but requires ClusterUUID</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--ft-segment=4</span></code> or higher: Multi-node segments for NVSwitch-based systems</p></li>
+</ul>
+<p>Example for H100 deployment (8 nodes requested, 6 needed for training):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ft_launcher<span class="w"> </span>--nnodes<span class="o">=</span><span class="m">6</span>:8<span class="w"> </span>--nproc-per-node<span class="o">=</span><span class="m">8</span><span class="w"> </span><span class="se">\</span>
+<span class="w">            </span>--max-restarts<span class="o">=</span><span class="m">3</span><span class="w"> </span><span class="se">\</span>
+<span class="w">            </span>training_script.py
+
+<span class="c1"># Nodes 0-5: Active workers (ranks 0-47)</span>
+<span class="c1"># Nodes 6-7: Hot spares (standby ranks 48-63)</span>
+</pre></div>
+</div>
+<p>Example for NVSwitch deployment with segment=4 (12 nodes requested, 8 needed):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ft_launcher<span class="w"> </span>--nnodes<span class="o">=</span><span class="m">8</span>:12<span class="w"> </span>--nproc-per-node<span class="o">=</span><span class="m">8</span><span class="w"> </span><span class="se">\</span>
+<span class="w">            </span>--ft-segment<span class="o">=</span><span class="m">4</span><span class="w"> </span>--max-restarts<span class="o">=</span><span class="m">3</span><span class="w"> </span><span class="se">\</span>
+<span class="w">            </span>training_script.py
+
+<span class="c1"># Requires domains with at least 4 nodes each</span>
+<span class="c1"># 8 active nodes = 2 complete segments</span>
+<span class="c1"># 4 hot spare nodes available for restart</span>
+</pre></div>
+</div>
+</section>
+<section id="numa-binding">
+<h4>NUMA binding<a class="headerlink" href="#numa-binding" title="Link to this heading"></a></h4>
+<p>The <code class="docutils literal notranslate"><span class="pre">ft_launcher</span></code> supports automatic NUMA node binding for workers through the <code class="docutils literal notranslate"><span class="pre">NVRX_GPUS_PER_NUMA</span></code>
+environment variable. When set, the launcher automatically wraps each worker process with <code class="docutils literal notranslate"><span class="pre">numactl</span></code>
+to bind it to the appropriate NUMA node based on its local rank.</p>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><strong>Prerequisites:</strong> This feature requires the <code class="docutils literal notranslate"><span class="pre">numactl</span></code> command-line tool to be installed and
+available in the system PATH. The launcher will fail to start workers if <code class="docutils literal notranslate"><span class="pre">numactl</span></code> is not found.</p>
+<p>To install on common Linux distributions:</p>
+<ul class="simple">
+<li><p><strong>Ubuntu/Debian:</strong> <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">apt-get</span> <span class="pre">install</span> <span class="pre">numactl</span></code></p></li>
+<li><p><strong>RHEL/CentOS/Rocky:</strong> <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">yum</span> <span class="pre">install</span> <span class="pre">numactl</span></code></p></li>
+</ul>
+</div>
+<p><strong>How it works:</strong></p>
+<ul class="simple">
+<li><p>Set <code class="docutils literal notranslate"><span class="pre">NVRX_GPUS_PER_NUMA</span></code> to the number of GPUs per NUMA node on your system</p></li>
+<li><p>The launcher calculates the NUMA node as: <code class="docutils literal notranslate"><span class="pre">numa_node</span> <span class="pre">=</span> <span class="pre">local_rank</span> <span class="pre">//</span> <span class="pre">gpus_per_numa</span></code></p></li>
+<li><p>Each worker is automatically wrapped with: <code class="docutils literal notranslate"><span class="pre">numactl</span> <span class="pre">--cpunodebind=&lt;numa_node&gt;</span> <span class="pre">--membind=&lt;numa_node&gt;</span></code></p></li>
+<li><p>This applies only to binary/script entrypoints (not Python function entrypoints)</p></li>
+</ul>
+<p><strong>Example usage:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># For a system with 4 GPUs per NUMA node (8 GPUs total, 2 NUMA nodes)</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">NVRX_GPUS_PER_NUMA</span><span class="o">=</span><span class="m">4</span>
+ft_launcher<span class="w"> </span>--nproc-per-node<span class="o">=</span><span class="m">8</span><span class="w"> </span>train.py
+
+<span class="c1"># In this configuration:</span>
+<span class="c1"># - Ranks 0-3 will be bound to NUMA node 0</span>
+<span class="c1"># - Ranks 4-7 will be bound to NUMA node 1</span>
+</pre></div>
+</div>
+<p><strong>Benefits:</strong></p>
+<p>Proper NUMA binding can significantly improve performance by ensuring memory locality
+and reducing cross-NUMA memory access overhead, which is especially important for
+multi-GPU training workloads.</p>
+</section>
 </section>
 <section id="hang-detection">
 <h3>Hang detection<a class="headerlink" href="#hang-detection" title="Link to this heading"></a></h3>
